@@ -1,0 +1,28 @@
+name: file-organizer
+version: 1.0.0
+description: "整理项目文件 —— 按类型/日期/大小分类，自动移动文件到对应目录"
+author: "NUCLEAR BOY"
+entry_point: "main:run"
+
+permissions:
+  filesystem:
+    read: [workspace/**]
+    write: [workspace/**]
+  network:
+    allowed: false
+  packages:
+    allowed: []
+  shell:
+    allowed: false
+
+parameters:
+  - name: action
+    type: string
+    description: "操作: scan（扫描）, organize（整理）, report（报告）"
+    required: false
+    default: "scan"
+  - name: target_dir
+    type: string
+    description: "目标目录（默认项目根目录）"
+    required: false
+    default: "."

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Hacker theme colors -->
+    <color name="nuclear_green">#00E676</color>
+    <color name="nuclear_black">#08090B</color>
+    <color name="nuclear_surface">#111318</color>
+    <color name="nuclear_success">#30D158</color>
+    <color name="nuclear_error">#FF453A</color>
+    <color name="nuclear_warning">#FFD60A</color>
+    <color name="nuclear_info">#0A84FF</color>
+</resources>

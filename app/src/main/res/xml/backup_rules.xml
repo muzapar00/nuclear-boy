@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!-- Include user data -->
+    <include domain="sharedpref" path="." />
+    <include domain="database" path="." />
+    <include domain="file" path="." />
+    <!-- Exclude sensitive encrypted prefs (backed up separately by the system) -->
+    <exclude domain="sharedpref" path="nuclearboy_secure_prefs.xml" />
+</full-backup-content>

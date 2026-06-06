@@ -1,0 +1,31 @@
+name: skill-creator
+version: 1.0.0
+description: "创建新的 Skill —— 在项目中生成标准的 skill.yaml 和入口脚本模板"
+author: "NUCLEAR BOY"
+entry_point: "main:run"
+
+permissions:
+  filesystem:
+    read: [workspace/**]
+    write: [workspace/**]
+  network:
+    allowed: false
+  packages:
+    allowed: []
+  shell:
+    allowed: false
+
+parameters:
+  - name: skill_name
+    type: string
+    description: "新 skill 的名称（小写英文+连字符）"
+    required: true
+  - name: description
+    type: string
+    description: "简短描述这个 skill 的功能"
+    required: true
+  - name: language
+    type: string
+    description: "编程语言（python/kotlin/javascript）"
+    required: false
+    default: "python"

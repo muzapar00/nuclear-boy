@@ -1,0 +1,27 @@
+name: code-formatter
+version: 1.0.0
+description: "代码格式化 —— 对 Python/JSON/XML/YAML 文件进行格式化美化"
+author: "NUCLEAR BOY"
+entry_point: "main:run"
+
+permissions:
+  filesystem:
+    read: [workspace/**]
+    write: [workspace/**]
+  network:
+    allowed: false
+  packages:
+    allowed: []
+  shell:
+    allowed: false
+
+parameters:
+  - name: file_path
+    type: string
+    description: "要格式化的文件路径"
+    required: true
+  - name: style
+    type: string
+    description: "格式风格: auto（自动检测）, compact（紧凑）, expanded（展开）"
+    required: false
+    default: "auto"

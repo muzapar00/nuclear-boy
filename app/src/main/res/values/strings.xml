@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">核弹男孩</string>
+    <string name="app_name_en">NUCLEAR BOY</string>
+    <string name="app_tagline">让你躺着也能写代码</string>
+    <string name="app_author">mzpr00（穆再排尔·穆合塔尔）</string>
+
+    <!-- Chat -->
+    <string name="chat_hint">告诉核弹男孩你想做什么…</string>
+    <string name="chat_send">发送</string>
+    <string name="chat_attach">附件</string>
+    <string name="chat_voice">语音</string>
+    <string name="chat_retry">重试</string>
+    <string name="chat_cancel">取消</string>
+    <string name="chat_copy">复制</string>
+    <string name="chat_thinking">思考中…</string>
+    <string name="chat_streaming">输出中…</string>
+    <string name="chat_executing">正在操作…</string>
+
+    <!-- HUD -->
+    <string name="hud_tokens_per_second">%s tok/s</string>
+    <string name="hud_cache_hit">缓存 %s%%</string>
+    <string name="hud_context">上下文 %s%%</string>
+    <string name="hud_cost">💰 %s</string>
+
+    <!-- Files -->
+    <string name="file_created">已创建</string>
+    <string name="file_modified">已修改</string>
+    <string name="file_deleted">已删除</string>
+    <string name="file_diff_added">+ %s</string>
+    <string name="file_diff_removed">- %s</string>
+
+    <!-- Projects -->
+    <string name="project_new">新建项目</string>
+    <string name="project_open">打开项目</string>
+    <string name="project_delete">删除项目</string>
+    <string name="project_archive">归档</string>
+    <string name="project_search">搜索项目…</string>
+
+    <!-- Settings -->
+    <string name="settings_title">设置</string>
+    <string name="settings_api_key">API Key</string>
+    <string name="settings_model">默认模型</string>
+    <string name="settings_budget">月度预算</string>
+    <string name="settings_theme">主题</string>
+    <string name="settings_memory">记忆管理</string>
+    <string name="settings_about">关于</string>
+
+    <!-- Onboarding -->
+    <string name="onboarding_welcome">嘿！我是核弹男孩。</string>
+    <string name="onboarding_subtitle">名字很炸对吧？但我其实挺暖的 😄</string>
+    <string name="onboarding_description">我是来帮你在手机上写代码的。\n躺着写、坐着写、趴着写都行。</string>
+    <string name="onboarding_language_question">你平时主要用什么语言？</string>
+
+    <!-- Errors -->
+    <string name="error_network">网络好像不太稳…</string>
+    <string name="error_api_key">API Key 好像不对</string>
+    <string name="error_balance">余额不太够了 🔋</string>
+    <string name="error_unknown">哎呀，出了点问题</string>
+
+    <!-- Misc -->
+    <string name="done">搞定了 ✨</string>
+    <string name="cancel">取消</string>
+    <string name="confirm">确认</string>
+    <string name="delete">删除</string>
+    <string name="save">保存</string>
+    <string name="share">分享</string>
+    <string name="night_mode_notice">夜深了，我切换到了夜间模式 🌙</string>
+    <string name="break_reminder">你已经连续写了 %d 分钟了，要不要休息一下？☕</string>
+</resources>

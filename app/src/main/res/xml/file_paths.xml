@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <cache-path name="generated_docs" path="documents/" />
+    <external-files-path name="workspace" path="NuclearBoy/" />
+    <files-path name="sandbox_output" path="sandbox/" />
+</paths>
