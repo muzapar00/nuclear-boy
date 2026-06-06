@@ -1,0 +1,36 @@
+# Gradle
+.gradle/
+gradle-temp/
+gradle-8.9-bin.zip
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.swp
+*.swo
+.kotlin/
+
+# Android
+local.properties
+*.apk
+*.aab
+*.keystore
+*.jks
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Scripts
+debug.bat
+
+# Secrets
+**/secrets.properties
+**/google-services.json
+
+# Python
+__pycache__/
+*.pyc
