@@ -3,15 +3,22 @@ package com.nuclearboy.app
 import android.app.Application
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.nuclearboy.app.update.UpdateManager
 import dagger.hilt.android.HiltAndroidApp
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 /**
  * NUCLEAR BOY Application entry point.
- * Initializes Python runtime, logging, and DI.
+ * Initializes Python runtime, logging, DI, and update checker.
  */
 @HiltAndroidApp
 class NuclearBoyApp : Application() {
+
+    private val appScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -36,6 +43,16 @@ class NuclearBoyApp : Application() {
 
         // Copy built-in skills from assets to internal storage
         copyBuiltinSkills()
+
+        // 后台检查更新
+        val updateManager = UpdateManager(this)
+        appScope.launch {
+            try {
+                updateManager.autoCheck()
+            } catch (e: Exception) {
+                android.util.Log.e("NuclearBoy", "[App] autoCheck FAILED: ${e.message}")
+            }
+        }
 
         if (com.nuclearboy.app.BuildConfig.DEBUG) {
             Timber.d("☢️ NUCLEAR BOY started — ready to code!")

@@ -167,6 +167,9 @@ class AgentEngine(
 
     // ── Public API ───────────────────────────────────────
 
+    /** Callback invoked when the agent run is cancelled — e.g. to interrupt Python. */
+    var onCancel: (() -> Unit)? = null
+
     /**
      * Run the agent loop for a single user message.
      *
@@ -842,10 +845,12 @@ class AgentEngine(
 
     /**
      * Cancel any in-progress agent run.
+     * Triggers onCancel callback to interrupt running operations (e.g. Python).
      */
     fun cancel() {
         scopeJob.cancel()
         scopeJob = SupervisorJob()  // Re-create so subsequent runs work
+        onCancel?.invoke()
     }
 
     /**

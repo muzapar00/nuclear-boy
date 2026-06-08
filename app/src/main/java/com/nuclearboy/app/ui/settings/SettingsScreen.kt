@@ -33,6 +33,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuclearboy.api.deepseek.ApiKeyManager
 import com.nuclearboy.app.R
+import com.nuclearboy.app.update.UpdateDownloader
+import com.nuclearboy.app.update.UpdateManager
 import com.nuclearboy.common.ModelTier
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.launch
@@ -367,12 +369,77 @@ fun SettingsScreen(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Text("☢️ 核弹男孩 NUCLEAR BOY", style = MaterialTheme.typography.titleMedium)
-                    Text("v0.2.0 · BUILD DEBUG", style = MaterialTheme.typography.bodySmall,
+
+                    // 动态版本号
+                    val currentVersion = try {
+                        context.packageManager.getPackageInfo(context.packageName, 0).versionName ?: "0.0.0"
+                    } catch (e: Exception) { "0.0.0" }
+                    Text("v$currentVersion · BUILD ${com.nuclearboy.app.BuildConfig.BUILD_TYPE.uppercase()}",
+                        style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
+
                     Spacer(Modifier.height(4.dp))
                     Text("作者: mzpr00 · mapr00@163.com", style = MaterialTheme.typography.bodySmall)
                     Text("免费开源 · 为所有同学打造", style = MaterialTheme.typography.bodySmall)
-                    Text("让你躺着也能写代码", style = MaterialTheme.typography.bodySmall)
+                    Text("新时代的贾维斯，比你更懂你的手机", style = MaterialTheme.typography.bodySmall)
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // 检查更新按钮
+                    var updateChecking by remember { mutableStateOf(false) }
+                    var updateResult by remember { mutableStateOf<UpdateManager.UpdateResult?>(null) }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        OutlinedButton(
+                            onClick = {
+                                updateChecking = true
+                                updateResult = null
+                                kotlinx.coroutines.MainScope().launch {
+                                    val um = UpdateManager(context)
+                                    updateResult = um.checkForUpdate(force = true)
+                                    updateChecking = false
+                                }
+                            },
+                            enabled = !updateChecking,
+                        ) {
+                            if (updateChecking) {
+                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                Spacer(Modifier.width(6.dp))
+                                Text("检查中...")
+                            } else {
+                                Icon(Icons.Filled.SystemUpdate, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("检查更新")
+                            }
+                        }
+                    }
+
+                    // 更新结果
+                    when (val result = updateResult) {
+                        is UpdateManager.UpdateResult.Available -> {
+                            Spacer(Modifier.height(8.dp))
+                            Text("🆕 新版本 ${result.version} 可用！",
+                                color = Color(0xFF00E676), fontWeight = FontWeight.Bold)
+                            if (result.body.isNotBlank()) {
+                                Text(result.body.take(200),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            TextButton(onClick = {
+                                UpdateDownloader.download(context, result.url, result.version)
+                            }) { Text("下载并安装 →", color = Color(0xFF00E676)) }
+                        }
+                        is UpdateManager.UpdateResult.UpToDate -> {
+                            Spacer(Modifier.height(8.dp))
+                            Text("✅ 已是最新版本", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        is UpdateManager.UpdateResult.Error -> {
+                            Spacer(Modifier.height(8.dp))
+                            Text("⚠️ 检查失败: ${result.message}", color = MaterialTheme.colorScheme.error)
+                        }
+                        null -> {}
+                    }
                 }
             }
 

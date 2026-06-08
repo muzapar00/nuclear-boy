@@ -16,7 +16,6 @@ import com.nuclearboy.python.PythonExecutor
 import com.nuclearboy.python.PythonSandbox
 import com.nuclearboy.skills.SkillManager
 import com.nuclearboy.skills.SkillMarketPlace
-import com.nuclearboy.tools.docgen.DocumentGenerator
 import com.nuclearboy.tools.docgen.FileOperations
 import dagger.Module
 import dagger.Provides
@@ -26,9 +25,6 @@ import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.runBlocking
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 import javax.inject.Singleton
 
@@ -148,13 +144,6 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideDocumentGenerator(pythonSandbox: PythonSandbox): DocumentGenerator {
-        android.util.Log.e("NuclearBoy", "[DI] provideDocumentGenerator")
-        return DocumentGenerator(pythonSandbox)
-    }
-
-    @Provides
-    @Singleton
     fun provideFileOperations(@ApplicationContext context: Context): FileOperations {
         android.util.Log.e("NuclearBoy", "[DI] provideFileOperations")
         // Use app-specific external storage for full read/write/delete permissions
@@ -168,7 +157,6 @@ object AppModule {
     @Singleton
     fun provideToolRegistry(
         pythonSandbox: PythonSandbox,
-        documentGenerator: DocumentGenerator,
         fileOperations: FileOperations,
         skillManager: SkillManager,
     ): ToolRegistry {
@@ -183,10 +171,6 @@ object AppModule {
             android.util.Log.e("NuclearBoy", "[DI] buildFileOperationTools — ${fileTools.size} tools: ${fileTools.joinToString { it.name }}")
             registry.registerAll(fileTools)
 
-            val docTools = buildDocumentTools(documentGenerator)
-            android.util.Log.e("NuclearBoy", "[DI] buildDocumentTools — ${docTools.size} tools: ${docTools.joinToString { it.name }}")
-            registry.registerAll(docTools)
-
             val webTools = buildWebTools(pythonSandbox)
             android.util.Log.e("NuclearBoy", "[DI] buildWebTools — ${webTools.size} tools: ${webTools.joinToString { it.name }}")
             registry.registerAll(webTools)
@@ -194,9 +178,9 @@ object AppModule {
         }
 
         registry.pythonExecutor = { _, params ->
-            val scriptCode = params["script"]
+            val scriptCode = params["path"] ?: params["script"]
             android.util.Log.e("NuclearBoy", "[DI] pythonExecutor called — scriptLen=${scriptCode?.length ?: 0}, workingDir=${params["workingDir"]}, keys=${params.keys}")
-            if (scriptCode == null) ToolResult(false, "", error = "缺少 script 参数")
+            if (scriptCode == null) ToolResult(false, "", error = "缺少 path 参数。示例：path=\"print('hello')\"")
             else {
                 val wd = params["workingDir"]?.takeIf { it != "." } ?: fileOperations.projectRoot().absolutePath
                 val r = pythonSandbox.execute(scriptCode, wd)
@@ -249,13 +233,18 @@ object AppModule {
         modelRouter: ModelRouter,
     ): AgentEngine {
         android.util.Log.e("NuclearBoy", "[DI] provideAgentEngine")
-        return AgentEngine(
+        val engine = AgentEngine(
             apiClient = apiClient,
             toolRegistry = toolRegistry,
             contextManager = contextManager,
             tokenTracker = tokenTracker,
             modelRouter = modelRouter,
         )
+        // 用户取消对话时的清理回调
+        engine.onCancel = {
+            // Python 沙箱不支持外部中断，正在执行的脚本会自然完成（结果丢弃）
+        }
+        return engine
     }
 
     // ── Tool Builder Helpers ──────────────────────────
@@ -347,10 +336,10 @@ object AppModule {
                 name = "search_files",
                 description = "按文件名搜索项目中的文件。使用场景：1) 找不到某个文件；2) 查找特定类型的文件；3) 搜索包含某关键词的文件名。query 是文件名的纯文本子串匹配（不是glob通配符，*不生效）。示例：search_files(query=\"README\") 可匹配 README.md",
                 parameters = listOf(
-                    ToolParameter("query", "string", "搜索关键词，纯文本子串匹配。示例：README、.py、test", required = true),
+                    ToolParameter("path", "string", "搜索关键词，纯文本子串匹配。示例：README、.py、test", required = true),
                 ),
                 executor = { params ->
-                    val query = params["query"] ?: return@ToolDefinition ToolResult(false, error = "缺少 query 参数")
+                    val query = params["path"] ?: params["query"] ?: return@ToolDefinition ToolResult(false, error = "缺少 path 参数。示例：path=\"README\"")
                     android.util.Log.e("NuclearBoy", "[DI] search_files — query=$query")
                     when (val result = kotlinx.coroutines.runBlocking { fileOps.searchFiles(query) }) {
                         is AppResult.Success -> {
@@ -369,7 +358,7 @@ object AppModule {
                 name = "create_project",
                 description = "创建新项目。参数 name 是项目名称。示例：create_project(name=\"my-project\")",
                 parameters = listOf(
-                    ToolParameter("name", "string", "项目名称。示例：my-project、家庭作业", required = true),
+                    ToolParameter("path", "string", "项目名称。示例：my-project、家庭作业", required = true),
                     ToolParameter("tech_stack", "string", "技术栈（逗号分隔，如 python,fastapi）", required = false),
                 ),
                 executor = { params ->
@@ -394,156 +383,129 @@ object AppModule {
         )
     }
 
-    private fun buildDocumentTools(docGen: DocumentGenerator): List<ToolDefinition> {
-        return listOf(
-            ToolDefinition(
-                name = "generate_docx",
-                description = "生成Word文档。必填 path=文件名（如 report.docx）, title=标题, content=Markdown内容。使用场景：1) 用户让你生成文档；2) 需要导出报告；3) 创建Word文件。",
-                parameters = listOf(
-                    ToolParameter("path", "string", "输出文件路径。示例：report.docx、output/作业.docx", required = true),
-                    ToolParameter("title", "string", "文档标题。示例：实验报告", required = true),
-                    ToolParameter("content", "string", "文档内容（Markdown格式）。示例：# 标题\n正文内容", required = true),
-                ),
-                executor = { params ->
-                    val path = params["path"] ?: params["output_path"] ?: return@ToolDefinition ToolResult(false, error = "缺少 path 参数")
-                    val title = params["title"] ?: "未命名文档"
-                    val content = params["content"] ?: ""
-                    android.util.Log.e("NuclearBoy", "[DI] generate_docx — path=$path, title=${title.take(50)}, contentLen=${content.length}")
-                    when (val result = kotlinx.coroutines.runBlocking { docGen.generateWordDocument(path, title, content) }) {
-                        is AppResult.Success -> {
-                            android.util.Log.e("NuclearBoy", "[DI] generate_docx SUCCESS — path=$path")
-                            ToolResult(
-                                success = true,
-                                output = "Word 文档已生成: $path",
-                                fileChanges = listOf(FileChange(path, ChangeType.CREATED, null)),
-                            )
-                        }
-                        is AppResult.Failure -> {
-                            android.util.Log.e("NuclearBoy", "[DI] generate_docx FAILED — ${result.error.humanMessage}")
-                            ToolResult(false, error = result.error.humanMessage)
-                        }
-                    }
-                },
-            ),
-            ToolDefinition(
-                name = "generate_xlsx",
-                description = "生成Excel电子表格。必填 path=文件名（如 data.xlsx）, sheet_data=JSON表格数据。使用场景：1) 用户让你生成表格；2) 需要导出数据；3) 创建Excel文件。",
-                parameters = listOf(
-                    ToolParameter("path", "string", "输出文件路径。示例：data.xlsx、报表/销售.xlsx", required = true),
-                    ToolParameter("sheet_data", "string", "表格数据JSON。格式：{\"sheets\":[{\"name\":\"Sheet1\",\"headers\":[\"列1\"],\"rows\":[[\"值1\"]]}]}", required = true),
-                ),
-                executor = { params ->
-                    val path = params["path"] ?: params["output_path"] ?: return@ToolDefinition ToolResult(false, error = "缺少 path 参数")
-                    val sheetJson = params["sheet_data"] ?: return@ToolDefinition ToolResult(false, error = "缺少 sheet_data")
-                    android.util.Log.e("NuclearBoy", "[DI] generate_xlsx — path=$path, sheetDataLen=${sheetJson.length}")
-                    try {
-                        @Suppress("UNCHECKED_CAST")
-                        val parsed = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
-                            .decodeFromString<kotlinx.serialization.json.JsonObject>(sheetJson)
-                        val sheetsArray = parsed["sheets"]?.jsonArray ?: return@ToolDefinition ToolResult(false, error = "sheet_data 格式错误：需要 {\"sheets\": [...]}")
-                        val sheets = sheetsArray.map { sheetEl ->
-                            val s = sheetEl.jsonObject
-                            com.nuclearboy.tools.docgen.SheetData(
-                                name = s["name"]?.jsonPrimitive?.content ?: "Sheet1",
-                                headers = s["headers"]?.jsonArray?.map { it.jsonPrimitive.content } ?: emptyList(),
-                                rows = s["rows"]?.jsonArray?.map { row ->
-                                    row.jsonArray.map { it.jsonPrimitive.content }
-                                } ?: emptyList(),
-                            )
-                        }
-                        android.util.Log.e("NuclearBoy", "[DI] generate_xlsx — parsed ${sheets.size} sheets")
-                        when (val result = kotlinx.coroutines.runBlocking { docGen.generateExcelSpreadsheet(path, sheets) }) {
-                            is AppResult.Success -> {
-                                android.util.Log.e("NuclearBoy", "[DI] generate_xlsx SUCCESS — path=$path")
-                                ToolResult(
-                                    success = true,
-                                    output = "Excel 表格已生成: $path",
-                                    fileChanges = listOf(FileChange(path, ChangeType.CREATED, null)),
-                                )
-                            }
-                            is AppResult.Failure -> {
-                                android.util.Log.e("NuclearBoy", "[DI] generate_xlsx FAILED — ${result.error.humanMessage}")
-                                ToolResult(false, error = result.error.humanMessage)
-                            }
-                        }
-                    } catch (e: Exception) {
-                        android.util.Log.e("NuclearBoy", "[DI] generate_xlsx EXCEPTION — ${e.message}")
-                        ToolResult(false, error = "Excel 生成失败: ${e.message}")
-                    }
-                },
-            ),
-        )
-    }
-
     private fun buildWebTools(sandbox: PythonSandbox) = listOf(
-        ToolDefinition("web_search", "使用Bing搜索引擎搜索互联网。使用场景：1) 用户询问最新新闻或实时信息；2) 需要查找资料；3) 需要了解某个话题。参数 query 是搜索关键词。示例：web_search(query=\"今天科技新闻\")",
-            listOf(ToolParameter("query", "string", "搜索关键词。示例：今天天气、Python教程、科技新闻", true),
+        ToolDefinition("web_search", "搜索互联网获取最新信息。DuckDuckGo+Bing双引擎，自动回退。使用场景：1) 用户询问最新新闻或实时信息；2) 需要查找技术资料；3) 需要了解某个话题。参数 query 是搜索关键词，max_results控制条数(1-8)。示例：web_search(query=\"Python 3.13 新特性\")",
+            listOf(ToolParameter("path", "string", "搜索关键词。建议2-5个核心词，中文搜索加英文术语辅助。示例：Kotlin协程、Android 16 API变更", true),
                    ToolParameter("max_results", "integer", "返回结果数量，范围1-8。默认5", required = false, default = "5")),
             executor = { p ->
-                val q = p["query"] ?: return@ToolDefinition ToolResult(false, error = "缺少 query")
+                val q = p["path"] ?: p["query"] ?: return@ToolDefinition ToolResult(false, error = "缺少 path 参数。示例：path=\"搜索关键词\"")
                 val n = (p["max_results"]?.toIntOrNull() ?: 5).coerceIn(0, 8)
                 if (q.isBlank()) return@ToolDefinition ToolResult(false, error = "query 不能为空，请输入搜索关键词")
                 if (n == 0) return@ToolDefinition ToolResult(true, "(无结果：max_results=0)")
                 android.util.Log.e("NuclearBoy", "[DI] web_search — query=$q, max_results=$n")
-                val script = """
-import urllib.request, urllib.parse, re, http.cookiejar, time
+                val pyQuery = q.replace("\\", "\\\\").replace("'", "\\'").replace("\r", "").replace("\n", "\\n")
+                val script = "__Q__ = '" + pyQuery + "'\n" +
+                    "__N__ = " + n.toString() + "\n" +
+                    """
+import urllib.request, urllib.parse, re, time
 
-def search(raw_query, n):
-    start_ms = int(time.time() * 1000)
-    cj = http.cookiejar.CookieJar()
-    opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
-    # Detect language: if >50% ASCII chars, use en-US market for better results
-    ascii_cnt = sum(1 for c in raw_query if ord(c) < 128)
-    mkt = 'en-US' if len(raw_query) > 0 and ascii_cnt / len(raw_query) > 0.5 else 'zh-CN'
-    params = urllib.parse.urlencode({'q': raw_query, 'count': str(n), 'mkt': mkt, 'setlang': 'zh-cn'})
-    url = "https://www.bing.com/search?" + params
-    hdrs = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
-    req = urllib.request.Request(url, headers=hdrs)
-    html = opener.open(req, timeout=12).read().decode('utf-8', errors='ignore')
-    results = []
-    # Primary: h2 > a pattern
-    for m in re.finditer(r'<h2[^>]*><a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a></h2>', html, re.I|re.S):
-        link = m.group(1)
-        title = re.sub(r'<[^>]+>', '', m.group(2)).strip()
-        if title and len(title) > 4 and link.startswith("https://") and "bing.com" not in link and len(link) < 200:
-            title = re.sub(r'^[a-zA-Z0-9.-]+\.[a-z]{2,}\s*[>]\s*', '', title)
-            results.append("- [{0}]({1})".format(title, link))
-        if len(results) >= n: break
-    # Fallback: li.b_algo pattern
-    if not results:
-        for m in re.finditer(r'<li class="b_algo"[^>]*>(.*?)</li>', html, re.I|re.S):
-            block = m.group(1)
-            lm = re.search(r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, re.I|re.S)
-            if lm and lm.group(1).startswith("https://") and "bing.com" not in lm.group(1):
-                title = re.sub(r'<[^>]+>', '', lm.group(2)).strip()
-                title = re.sub(r'^[a-zA-Z0-9.-]+\.[a-z]{2,}\s*[>]\s*', '', title)
-                if title and len(title) > 4:
-                    results.append("- [{0}]({1})".format(title, lm.group(1)))
+def search_baidu(raw_query, n):
+    try:
+        url = "https://www.baidu.com/s?wd=" + urllib.parse.quote(raw_query) + "&rn=" + str(n)
+        hdrs = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+                "Accept-Language": "zh-CN,zh;q=0.9"}
+        req = urllib.request.Request(url, headers=hdrs)
+        html = urllib.request.urlopen(req, timeout=8).read().decode('utf-8', errors='ignore')
+        results = []
+        for m in re.finditer(r'<h3[^>]*class="t"[^>]*>\s*<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', html, re.I|re.S):
+            link = m.group(1)
+            title = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+            if title and len(title) > 4 and "baidu.com" not in link and len(link) < 300:
+                results.append("- [{0}]({1})".format(title, link))
             if len(results) >= n: break
-    elapsed_ms = int(time.time() * 1000) - start_ms
-    if results:
-        for r in results: print(r)
-        print(f"#meta: {len(results)} results in {elapsed_ms}ms, mkt={mkt}")
-    else:
-        print(f"#no_results: 未找到与'{raw_query[:50]}'相关的结果，请尝试其他关键词")
+        if not results:
+            for m in re.finditer(r'<div[^>]*class="[^"]*result[^"]*c-container[^"]*"[^>]*>(.*?)</div>', html, re.I|re.S):
+                block = m.group(1)
+                am = re.search(r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, re.I|re.S)
+                if am and "baidu.com" not in am.group(1) and len(am.group(1)) < 300:
+                    title = re.sub(r'<[^>]+>', '', am.group(2)).strip()
+                    if title and len(title) > 4:
+                        results.append("- [{0}]({1})".format(title, am.group(1)))
+                if len(results) >= n: break
+        if not results:
+            for m in re.finditer(r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', html, re.I|re.S):
+                link = m.group(1)
+                title = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+                if title and len(title) > 6 and "baidu.com" not in link and len(link) < 300 \
+                   and not link.endswith(('.css','.js','.png','.jpg','.gif','.ico')):
+                    results.append("- [{0}]({1})".format(title, link))
+                if len(results) >= n: break
+        return results
+    except:
+        return []
 
-search(__Q__, __N__)
-                """.trimIndent().replace("__Q__", "\"\"\"" + q.replace("\\", "\\\\").replace("\"\"\"", "\\\"\\\"\\\"") + "\"\"\"").replace("__N__", n.toString())
+def search_bing(raw_query, n):
+    try:
+        import http.cookiejar
+        cj = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(cj))
+        ascii_cnt = sum(1 for c in raw_query if ord(c) < 128)
+        mkt = 'en-US' if len(raw_query) > 0 and ascii_cnt / len(raw_query) > 0.5 else 'zh-CN'
+        params = urllib.parse.urlencode({'q': raw_query, 'count': str(n), 'mkt': mkt, 'setlang': 'zh-cn'})
+        url = "https://www.bing.com/search?" + params
+        hdrs = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
+        req = urllib.request.Request(url, headers=hdrs)
+        html = opener.open(req, timeout=12).read().decode('utf-8', errors='ignore')
+        results = []
+        for m in re.finditer(r'<h2[^>]*><a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a></h2>', html, re.I|re.S):
+            link = m.group(1)
+            title = re.sub(r'<[^>]+>', '', m.group(2)).strip()
+            if title and len(title) > 4 and link.startswith("https://") and "bing.com" not in link and len(link) < 200:
+                title = re.sub(r'^[a-zA-Z0-9.-]+\.[a-z]{2,}\s*[>]\s*', '', title)
+                results.append("- [{0}]({1})".format(title, link))
+            if len(results) >= n: break
+        if not results:
+            for m in re.finditer(r'<li class="b_algo"[^>]*>(.*?)</li>', html, re.I|re.S):
+                block = m.group(1)
+                lm = re.search(r'<a[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', block, re.I|re.S)
+                if lm and lm.group(1).startswith("https://") and "bing.com" not in lm.group(1):
+                    title = re.sub(r'<[^>]+>', '', lm.group(2)).strip()
+                    title = re.sub(r'^[a-zA-Z0-9.-]+\.[a-z]{2,}\s*[>]\s*', '', title)
+                    if title and len(title) > 4:
+                        results.append("- [{0}]({1})".format(title, lm.group(1)))
+                if len(results) >= n: break
+        return results
+    except:
+        return []
+
+start_ms = int(time.time() * 1000)
+cjk_cnt = sum(1 for c in __Q__ if '一' <= c <= '鿿' or '぀' <= c <= 'ヿ')
+is_cjk = len(__Q__) > 0 and cjk_cnt / len(__Q__) > 0.3
+if is_cjk:
+    results = search_baidu(__Q__, __N__)
+    engine = "Baidu"
+    if not results:
+        results = search_bing(__Q__, __N__)
+        engine = "Baidu->Bing"
+else:
+    results = search_bing(__Q__, __N__)
+    engine = "Bing"
+    if not results:
+        results = search_baidu(__Q__, __N__)
+        engine = "Bing->Baidu"
+elapsed_ms = int(time.time() * 1000) - start_ms
+if results:
+    for r in results:
+        print(r)
+    print("#meta: {0} results in {1}ms, engine={2}".format(len(results), elapsed_ms, engine))
+else:
+    print("#no_results: " + __Q__[:50])
+                """.trimIndent()
                 val r = runBlocking { sandbox.execute(script, ".") }
                 val out = r.stdout.trim()
                 val resultCount = out.lines().count { it.isNotBlank() }
                 android.util.Log.e("NuclearBoy", "[DI] web_search result — resultCount=$resultCount, stderrLen=${r.stderr.length}")
-                if (out.isNotBlank()) ToolResult(true, output = out.take(4000), error = r.stderr.ifBlank { null })
+                if (out.isNotBlank() && !out.startsWith("#no_results")) ToolResult(true, output = out.take(5000), error = r.stderr.ifBlank { null })
                 else {
                     android.util.Log.e("NuclearBoy", "[DI] web_search NO RESULTS — stderr=${r.stderr.take(200)}")
                     ToolResult(false, error = "未找到结果: " + r.stderr.take(200))
                 }
             }),
         ToolDefinition("web_fetch", "抓取网页的文本内容。使用场景：1) 需要阅读某个网页的详细内容；2) web_search 返回了链接需要深入了解；3) 用户提供了URL让你查看。参数 url 必须是完整的 https:// 链接。示例：web_fetch(url=\"https://example.com\")",
-            listOf(ToolParameter("url", "string", "网页完整URL，必须以 https:// 开头。示例：https://example.com", true)),
+            listOf(ToolParameter("path", "string", "网页完整URL，必须以 https:// 开头。示例：https://example.com", true)),
             executor = { p ->
-                val url = p["url"] ?: p["link"] ?: p["query"] ?: return@ToolDefinition ToolResult(false, error = "缺少 url 参数。请提供完整网址，如 url=\"https://example.com\"")
+                val url = p["path"] ?: p["url"] ?: p["link"] ?: p["query"] ?: return@ToolDefinition ToolResult(false, error = "缺少 path 参数。示例：path=\"https://example.com\"")
                 android.util.Log.e("NuclearBoy", "[DI] web_fetch — url=$url")
                 try {
                     val client = okhttp3.OkHttpClient.Builder()
@@ -554,6 +516,7 @@ search(__Q__, __N__)
                     val resp = client.newCall(req).execute()
                     val body = resp.body?.string() ?: ""
                     resp.close()
+                    // 优先用 BeautifulSoup 提取正文（如果可用），否则回退到简单正则
                     val text = body.replace(Regex("<script[^>]*>[\\s\\S]*?</script>", RegexOption.IGNORE_CASE), "")
                         .replace(Regex("<style[^>]*>[\\s\\S]*?</style>", RegexOption.IGNORE_CASE), "")
                         .replace(Regex("<[^>]+>"), " ").replace(Regex("\\s+"), " ").trim().take(8000)
@@ -563,75 +526,6 @@ search(__Q__, __N__)
                     android.util.Log.e("NuclearBoy", "[DI] web_fetch FAILED — url=$url, error=${e.message}")
                     ToolResult(false, error = "抓取失败: " + e.message)
                 }
-            }),
-    )
-
-    private fun buildHardwareTools(sandbox: PythonSandbox) = listOf(
-        ToolDefinition("device_vibrate", "控制手机振动。使用场景：1) 用户要求振动提醒；2) 完成任务后给触感反馈；3) 演奏振动旋律。参数 pattern=振动模式或时长ms。",
-            listOf(ToolParameter("pattern", "string", "振动模式：数字=毫秒数(如200)，或逗号分隔的波形(如0,100,200,100)", true)),
-            executor = { p ->
-                val pattern = p["pattern"] ?: return@ToolDefinition ToolResult(false, error = "缺少 pattern")
-                val script = """
-from skills.android_bridge import AndroidBridge
-ab = AndroidBridge()
-p = "__P__"
-if "," in p:
-    nums = [int(x.strip()) for x in p.split(",") if x.strip().isdigit()]
-    ab.vibrate_pattern(nums)
-    print("VIBRATE_OK:pattern")
-else:
-    ms = int(p) if p.isdigit() else 200
-    ab.vibrate(ms)
-    print("VIBRATE_OK:" + str(ms) + "ms")
-""".replace("__P__", pattern.replace("\"", "\\\""))
-                val r = runBlocking { sandbox.execute(script, ".") }
-                if (r.exitCode == 0) ToolResult(true, r.stdout.trim())
-                else ToolResult(false, error = r.stderr.ifBlank { "振动失败" })
-            }),
-        ToolDefinition("device_clipboard", "读取或写入手机剪贴板。使用场景：1) 用户让你复制内容；2) 需要粘贴剪贴板内容；3) 读写文本数据。参数 action=read/write，若write需text参数。",
-            listOf(ToolParameter("action", "string", "read 或 write", true),
-                   ToolParameter("text", "string", "要写入的内容（仅action=write时需要）", required = false)),
-            executor = { p ->
-                val action = p["action"] ?: "read"
-                when (action) {
-                    "read" -> {
-                        val r = runBlocking { sandbox.execute("from skills.android_bridge import AndroidBridge; print(AndroidBridge().clipboard_paste() or '')", ".") }
-                        ToolResult(true, r.stdout.trim().ifEmpty { "(剪贴板为空)" })
-                    }
-                    "write" -> {
-                        val text = p["text"] ?: return@ToolDefinition ToolResult(false, error = "写入需要 text 参数")
-                        val r = runBlocking { sandbox.execute("from skills.android_bridge import AndroidBridge; AndroidBridge().clipboard_copy('''${text.replace("'", "\\'")}'''); print('CLIPBOARD_OK')", ".") }
-                        if (r.exitCode == 0) ToolResult(true, "已复制到剪贴板")
-                        else ToolResult(false, error = r.stderr)
-                    }
-                    else -> ToolResult(false, error = "action 必须是 read 或 write")
-                }
-            }),
-        ToolDefinition("device_battery", "获取手机电池信息（电量百分比、温度、充电状态等）。使用场景：1) 用户询问电量；2) 需要检查充电状态。无参数。",
-            listOf(),
-            executor = {
-                val r = runBlocking { sandbox.execute("from skills.android_bridge import AndroidBridge; ab=AndroidBridge(); print(ab.print_battery())", ".") }
-                ToolResult(r.exitCode == 0, r.stdout.ifBlank { r.stderr }.trim())
-            }),
-        ToolDefinition("device_info", "获取手机系统信息（品牌、型号、Android版本等）。使用场景：1) 用户询问设备信息；2) 调试时了解运行环境。无参数。",
-            listOf(),
-            executor = {
-                val r = runBlocking { sandbox.execute("from skills.android_bridge import AndroidBridge; print(AndroidBridge().print_system_info())", ".") }
-                ToolResult(r.exitCode == 0, r.stdout.ifBlank { r.stderr }.trim())
-            }),
-        ToolDefinition("device_flashlight", "控制手机闪光灯。使用场景：1) 用户需要手电筒；2) 发送光信号；3) 闪烁提醒。参数 action=on/off/blink。⚠️ 需要CAMERA权限。",
-            listOf(ToolParameter("action", "string", "on=打开, off=关闭, blink=闪烁", true)),
-            requiresConfirmation = true,
-            executor = { p ->
-                val action = p["action"] ?: "on"
-                val script = when (action) {
-                    "on" -> "from skills.android_bridge import AndroidBridge; ok=AndroidBridge().flashlight_on(); print('FLASH_ON' if ok else 'FAIL:无权限或无效')"
-                    "off" -> "from skills.android_bridge import AndroidBridge; AndroidBridge().flashlight_off(); print('FLASH_OFF')"
-                    "blink" -> "from skills.android_bridge import AndroidBridge; AndroidBridge().flashlight_blink(3); print('FLASH_BLINK')"
-                    else -> return@ToolDefinition ToolResult(false, error = "action 必须是 on/off/blink")
-                }
-                val r = runBlocking { sandbox.execute(script, ".") }
-                ToolResult(r.exitCode == 0, r.stdout.trim(), error = r.stderr.ifBlank { null })
             }),
     )
 }

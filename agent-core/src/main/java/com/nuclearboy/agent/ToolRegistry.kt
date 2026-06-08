@@ -329,7 +329,7 @@ class ToolRegistry {
                     name = "run_python",
                     description = "在 Python 3.11 沙箱中直接执行 Python 代码并返回执行结果。你可以用它来运行脚本、测试代码、处理数据、生成文档等。沙箱已就绪，随时可用。",
                     parameters = listOf(
-                        ToolParameter("script", "string", "要执行的 Python 代码（完整脚本）", required = true),
+                        ToolParameter("path", "string", "要执行的 Python 代码（完整脚本）", required = true),
                         ToolParameter("workingDir", "string", "工作目录", required = false, default = "."),
                         ToolParameter("timeout", "integer", "超时秒数（默认 120）", required = false, default = "120"),
                     ),
@@ -339,43 +339,6 @@ class ToolRegistry {
                         pythonExecutor?.let { exec ->
                             exec("run_python", params)
                         } ?: ToolResult.failure("Python 运行时未初始化")
-                    },
-                ),
-
-                // --- Generate Word Document ---
-                ToolDefinition(
-                    name = "generate_docx",
-                    description = "生成 Word (.docx) 文档。支持标题、段落、表格、图片等。",
-                    parameters = listOf(
-                        ToolParameter("fileName", "string", "输出的文件名（不含路径）", required = true),
-                        ToolParameter("title", "string", "文档标题", required = false),
-                        ToolParameter("content", "string", "文档内容描述（Markdown 风格）", required = true),
-                        ToolParameter("outputDir", "string", "输出目录", required = false,
-                            default = "/storage/emulated/0/Documents/NuclearBoy/"),
-                    ),
-                    requiresConfirmation = true,
-                    executor = { params ->
-                        pythonExecutor?.let { exec ->
-                            exec("generate_docx", params)
-                        } ?: ToolResult.failure("Python 运行时未初始化，无法生成文档")
-                    },
-                ),
-
-                // --- Generate Excel Spreadsheet ---
-                ToolDefinition(
-                    name = "generate_xlsx",
-                    description = "生成 Excel (.xlsx) 电子表格。支持多 sheet、公式、格式化。",
-                    parameters = listOf(
-                        ToolParameter("fileName", "string", "输出的文件名（不含路径）", required = true),
-                        ToolParameter("sheets", "string", "Sheet 定义（JSON 格式: [{name, headers, rows}]）", required = true),
-                        ToolParameter("outputDir", "string", "输出目录", required = false,
-                            default = "/storage/emulated/0/Documents/NuclearBoy/"),
-                    ),
-                    requiresConfirmation = true,
-                    executor = { params ->
-                        pythonExecutor?.let { exec ->
-                            exec("generate_xlsx", params)
-                        } ?: ToolResult.failure("Python 运行时未初始化，无法生成表格")
                     },
                 ),
 
@@ -406,7 +369,7 @@ class ToolRegistry {
                 ),
             )
         )
-        android.util.Log.e("NuclearBoy", "[ToolReg] registerDefaultTools() registered read_file, write_file, edit_file, search_files, search_content, list_directory, execute_shell, run_python, generate_docx, generate_xlsx, web_search, web_fetch")
+        android.util.Log.e("NuclearBoy", "[ToolReg] registerDefaultTools() registered read_file, write_file, search_files, list_directory, run_python, web_search, web_fetch")
     }
 
     // ── Private ──────────────────────────────────────────
@@ -486,7 +449,7 @@ class ToolRegistry {
         params: Map<String, String>,
     ): AppResult<ToolResult> {
         // Try Python executor for tool names that look like Python tools
-        if (name in listOf("run_python", "generate_docx", "generate_xlsx", "execute_shell")) {
+        if (name in listOf("run_python", "execute_shell")) {
             pythonExecutor?.let { exec ->
                 return AppResult.runCatching { exec(name, params) }
             }

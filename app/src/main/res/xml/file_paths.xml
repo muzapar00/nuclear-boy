@@ -3,4 +3,5 @@
     <cache-path name="generated_docs" path="documents/" />
     <external-files-path name="workspace" path="NuclearBoy/" />
     <files-path name="sandbox_output" path="sandbox/" />
+    <external-files-path name="downloads" path="Download/" />
 </paths>
