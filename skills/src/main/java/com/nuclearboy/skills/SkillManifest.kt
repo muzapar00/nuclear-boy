@@ -16,6 +16,16 @@ data class SkillManifest(
     val permissions: SkillPermissions,
     val parameters: List<SkillParameter> = emptyList(),
     val entryPoint: String = "main:run",
+    val triggers: SkillTriggers? = null,
+)
+
+/**
+ * Automatic trigger conditions for a skill.
+ */
+@Serializable
+data class SkillTriggers(
+    val on_startup: Boolean = false,
+    val on_new_project: Boolean = false,
 )
 
 /**

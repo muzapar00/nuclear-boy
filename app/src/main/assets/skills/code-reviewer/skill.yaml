@@ -1,0 +1,7 @@
+name: code-reviewer
+version: "1.0.0"
+description: "代码审查：扫描项目文件，检查代码质量和常见问题，给出改进建议"
+author: "NUCLEAR BOY Built-in"
+triggers:
+  on_startup: false
+  on_new_project: true

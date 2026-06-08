@@ -11,6 +11,7 @@ import com.nuclearboy.api.deepseek.TokenSnapshot
 import com.nuclearboy.api.deepseek.TokenTracker
 import com.nuclearboy.common.*
 import com.nuclearboy.common.AppConstants
+import com.nuclearboy.memory.MemoryStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -50,7 +51,17 @@ class ChatViewModel @Inject constructor(
     private val apiKeyManager: com.nuclearboy.api.deepseek.ApiKeyManager,
     private val fileOperations: com.nuclearboy.tools.docgen.FileOperations,
     private val skillManager: com.nuclearboy.skills.SkillManager,
+    private val memoryStore: MemoryStore,
 ) : ViewModel() {
+
+    // 从记忆加载用户画像
+    private suspend fun loadUserProfile(): UserProfile {
+        val result = memoryStore.exportUserProfile()
+        return when (result) {
+            is AppResult.Success -> result.data
+            is AppResult.Failure -> UserProfile()
+        }
+    }
 
     /** Set by NavHost to enable background notifications */
     var notificationCallback: ((String, String?) -> Unit)? = null
@@ -269,10 +280,13 @@ class ChatViewModel @Inject constructor(
         agentJob = viewModelScope.launch(Dispatchers.IO) {
             android.util.Log.e("NuclearBoy", "[ChatVM] sendMessage() coroutine started on IO dispatcher")
             android.util.Log.e("NuclearBoy", "SEND: coroutine started!")
+            // 从记忆加载用户偏好
+            val loadedProfile = loadUserProfile()
+            val enrichedContext = projectContext.copy(userProfile = loadedProfile)
             try {
                 agentEngine.processMessage(
                     userMessage = trimmed,
-                    projectContext = projectContext,
+                    projectContext = enrichedContext,
                     conversationHistory = _messages.value.filter { it.role != MessageRole.SYSTEM },
                     userMode = selectedMode,
                 ).collect { event ->
@@ -557,6 +571,22 @@ class ChatViewModel @Inject constructor(
             notificationCallback?.invoke(lastAssistant.content, currentProjectId)
         }
         saveMessages()
+        // 自动提取记忆：从本次对话中学习用户偏好和项目信息
+        val projectId = currentProjectId ?: "default"
+        val lastUser = lastUserMessage?.content ?: ""
+        val lastAi = lastAssistant?.content ?: ""
+        if (lastAi.isNotBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                memoryStore.autoExtractMemories(projectId, lastUser, lastAi)
+                // 更新用户画像：记录本次对话
+                memoryStore.updateUserProfile("last_project", projectId, "interaction", 0.9f)
+                memoryStore.updateUserProfile("last_active_at", System.currentTimeMillis().toString(), "schedule", 0.9f)
+                memoryStore.updateUserProfile("total_conversations",
+                    ((memoryStore.getProfileValue("total_conversations").let {
+                        (it as? AppResult.Success)?.data?.toIntOrNull() ?: 0
+                    } + 1).toString()), "interaction", 0.9f)
+            }
+        }
     }
 
     // ── Helpers ──────────────────────────────────────────────────────────

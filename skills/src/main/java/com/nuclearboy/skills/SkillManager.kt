@@ -737,6 +737,7 @@ if result is not None:
 
         val permissions = parsePermissions(m["permissions"])
         val parameters = parseParameters(m["parameters"])
+        val triggers = parseTriggers(m["triggers"])
 
         return SkillManifest(
             name = name,
@@ -747,6 +748,7 @@ if result is not None:
             permissions = permissions,
             parameters = parameters,
             entryPoint = entryPoint,
+            triggers = triggers,
         )
     }
 
@@ -802,6 +804,16 @@ if result is not None:
         if (raw !is Map<*, *>) return null
         val map = raw as Map<String, Any>
         return ShellPermission(allowed = (map["allowed"] as? Boolean) ?: false)
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    private fun parseTriggers(raw: Any?): SkillTriggers? {
+        if (raw !is Map<*, *>) return null
+        val map = raw as Map<String, Any>
+        return SkillTriggers(
+            on_startup = (map["on_startup"] as? Boolean) ?: false,
+            on_new_project = (map["on_new_project"] as? Boolean) ?: false,
+        )
     }
 
     @Suppress("UNCHECKED_CAST")

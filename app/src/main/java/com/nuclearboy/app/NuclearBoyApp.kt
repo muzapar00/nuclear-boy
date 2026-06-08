@@ -3,7 +3,14 @@ package com.nuclearboy.app
 import android.app.Application
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.os.Build
+import androidx.core.app.NotificationCompat
 import com.nuclearboy.app.update.UpdateManager
+import com.nuclearboy.memory.MemoryStore
 import dagger.hilt.android.HiltAndroidApp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +61,20 @@ class NuclearBoyApp : Application() {
             }
         }
 
+        // 记忆系统：启动时读取上次会话，推送欢迎通知
+        val memoryStore = if (BuildConfig.DEBUG) MemoryStore(this) else null // Hilt will provide in ViewModels
+        appScope.launch {
+            try {
+                val lastProject = memoryStore?.getProfileValue("last_project")
+                val lastName = (lastProject as? com.nuclearboy.common.AppResult.Success)?.data
+                if (!lastName.isNullOrBlank() && lastName != "default") {
+                    showWelcomeNotification(lastName)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("NuclearBoy", "[App] memory check FAILED: ${e.message}")
+            }
+        }
+
         if (com.nuclearboy.app.BuildConfig.DEBUG) {
             Timber.d("☢️ NUCLEAR BOY started — ready to code!")
         }
@@ -99,6 +120,29 @@ class NuclearBoyApp : Application() {
             Timber.e(e, "Failed to copy built-in skills")
             android.util.Log.e("NuclearBoy", "[App] copyBuiltinSkills FAILED — ${e.message}")
         }
+    }
+
+    private fun showWelcomeNotification(projectName: String) {
+        try {
+            val channelId = "welcome_channel"
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                val channel = NotificationChannel(channelId, "欢迎回来", NotificationManager.IMPORTANCE_DEFAULT)
+                val nm = getSystemService(NotificationManager::class.java)
+                nm.createNotificationChannel(channel)
+            }
+            val intent = Intent(this, MainActivity::class.java)
+            val pi = PendingIntent.getActivity(this, 0, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            val notification = NotificationCompat.Builder(this, channelId)
+                .setSmallIcon(android.R.drawable.ic_dialog_info)
+                .setContentTitle("☢️ 欢迎回来！")
+                .setContentText("上次在搞「$projectName」，要继续吗？")
+                .setAutoCancel(true)
+                .setContentIntent(pi)
+                .build()
+            val nm = getSystemService(NotificationManager::class.java)
+            nm.notify(3000, notification)
+        } catch (_: Exception) {}
     }
 
     companion object {

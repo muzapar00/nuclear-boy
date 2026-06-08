@@ -1,0 +1,7 @@
+name: daily-briefing
+version: "1.0.0"
+description: "早间简报：获取天气、日程、新闻摘要，给你一天的智能开场"
+author: "NUCLEAR BOY Built-in"
+triggers:
+  on_startup: true
+  on_new_project: false

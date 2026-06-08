@@ -36,6 +36,7 @@ dependencies {
     implementation(project(":api-deepseek"))
     implementation(project(":skills"))
     implementation(project(":tools-docgen"))
+    implementation(project(":memory"))
 
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
