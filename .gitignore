@@ -27,6 +27,9 @@ Thumbs.db
 # Scripts
 debug.bat
 
+# Temp
+deepseek api key get/
+
 # Secrets
 **/secrets.properties
 **/google-services.json

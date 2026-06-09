@@ -79,7 +79,6 @@ fun ChatScreen(
         viewModel.notificationCallback = onNotification
     }
     val listState = rememberLazyListState()
-    var isHudExpanded by remember { mutableStateOf(false) }
     var showFiles by remember { mutableStateOf(false) }
     var selectedMode by remember { mutableIntStateOf(0) } // 0=Chat 1=Think 2=Expert
     var filePanelScrollState by remember { mutableStateOf(0f) }
@@ -134,26 +133,39 @@ fun ChatScreen(
                         Icon(Icons.Default.Menu, "菜单", tint = NuclearBoyTheme.colorScheme.material.primary, modifier = Modifier.size(26.dp))
                     }
                     Spacer(Modifier.weight(1f))
-                    // 项目名称 — 绿底黑字居中
-                    val projectName = viewModel.projectName.collectAsState().value
-                    if (projectName.isNotEmpty()) {
+                    // 顶栏标题
+                    if (projectId == "__general__") {
                         Text(
-                            text = projectName,
-                            fontSize = 11.sp,
+                            "☢️ 核弹男孩",
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.Bold,
-                            color = Color(0xFF08090B),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(4.dp))
-                                .background(NuclearBoyTheme.colorScheme.material.primary)
-                                .padding(horizontal = 8.dp, vertical = 1.dp),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
+                            fontFamily = FontFamily.Monospace,
+                            color = NuclearBoyTheme.colorScheme.material.primary,
                         )
+                    } else {
+                        val projectName = viewModel.projectName.collectAsState().value
+                        if (projectName.isNotEmpty()) {
+                            Text(
+                                text = projectName,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF08090B),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(4.dp))
+                                    .background(NuclearBoyTheme.colorScheme.material.primary)
+                                    .padding(horizontal = 8.dp, vertical = 1.dp),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
                     }
                     Spacer(Modifier.weight(1f))
                     // 文件面板按钮 — 类似首页设置图标
                     IconButton(
-                        onClick = { showFiles = !showFiles },
+                        onClick = {
+                            if (!showFiles) viewModel.refreshProjectFiles()
+                            showFiles = !showFiles
+                        },
                         modifier = Modifier.size(44.dp),
                     ) {
                         Icon(
@@ -166,18 +178,6 @@ fun ChatScreen(
                     }
                 }
                 TokenHudBar(
-                    tokenSnapshot = uiState.tokenSnapshot,
-                    contextBudget = uiState.contextBudget,
-                    modelTier = uiState.tokenSnapshot.modelTier,
-                    thinkingMode = if (uiState.tokenSnapshot.thinkingMode != "disabled")
-                        ThinkingMode.HIGH else ThinkingMode.DISABLED,
-                    isExpanded = isHudExpanded,
-                    onToggle = { isHudExpanded = !isHudExpanded },
-                    fileCount = viewModel.projectFiles.collectAsState().value.size,
-                    skillCount = viewModel.getActiveSkillCount(),
-                    onRefreshFiles = { viewModel.refreshProjectFiles(viewModel.browseDir.value) },
-                    projectRoot = viewModel.getProjectRoot(),
-                    context = context,
                     selectedMode = selectedMode,
                     onModeChange = { selectedMode = it; viewModel.setMode(it) },
                 )
@@ -189,6 +189,7 @@ fun ChatScreen(
                 onSend = { text -> viewModel.sendMessage(text) },
                 onCancel = { viewModel.cancelCurrentOperation() },
                 fileCount = viewModel.projectFiles.collectAsState().value.size,
+                placeholder = if (projectId == "__general__") "和核弹男孩对话…" else "输入指令…",
                 onAttachFile = {
                     android.util.Log.e("NuclearBoy", "[ChatScreen] filePicker launched")
                     filePickerLauncher.launch(arrayOf("*/*"))
@@ -208,6 +209,31 @@ fun ChatScreen(
                 contentPadding = PaddingValues(vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(1.dp),
             ) {
+                // General Agent 欢迎卡片
+                if (projectId == "__general__" && uiState.messages.isEmpty()) {
+                    item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = NuclearBoyTheme.colorScheme.material.surfaceVariant.copy(alpha = 0.5f)),
+                            border = BorderStroke(1.dp, NuclearBoyTheme.colorScheme.material.primary.copy(alpha = 0.2f)),
+                        ) {
+                            Column(modifier = Modifier.padding(20.dp)) {
+                                Text("☢️ 欢迎来到核弹男孩", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = NuclearBoyTheme.colorScheme.material.primary)
+                                Spacer(Modifier.height(12.dp))
+                                Text("我可以帮你：", fontSize = 14.sp, color = NuclearBoyTheme.colorScheme.material.onSurface)
+                                Spacer(Modifier.height(8.dp))
+                                WelcomeItem("🔍", "搜资料", "Bing + 百度双引擎搜索最新信息")
+                                WelcomeItem("🐍", "写代码", "Python 3.11 沙箱 + Java 桥接控制手机")
+                                WelcomeItem("📄", "生成文档", "Word / Excel / PPT 一键生成")
+                                WelcomeItem("📁", "管项目", "多项目切换，文件浏览编辑")
+                                WelcomeItem("📱", "控硬件", "闪光灯、闹钟、通知、日历… 全搞定")
+                                Spacer(Modifier.height(12.dp))
+                                Text("直接跟我说你想做什么，开干吧 💪", fontSize = 12.sp, color = NuclearBoyTheme.colorScheme.material.onSurfaceVariant)
+                            }
+                        }
+                    }
+                }
                 items(items = uiState.messages, key = { it.id }) { message ->
                     val isLast = message.id == uiState.messages.lastOrNull()?.id
                     val isStreaming = isLast && uiState.streamingState?.isStreaming == true
@@ -653,6 +679,18 @@ private fun EmptyChatView(modifier: Modifier = Modifier, onSuggestionClick: (Str
 }
 
 @Composable
+private fun WelcomeItem(emoji: String, title: String, desc: String) {
+    Row(modifier = Modifier.padding(vertical = 4.dp), verticalAlignment = Alignment.Top) {
+        Text(emoji, fontSize = 14.sp)
+        Spacer(Modifier.width(8.dp))
+        Column {
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Medium, color = Color(0xFF00E676))
+            Text(desc, fontSize = 11.sp, color = Color(0xFF838896))
+        }
+    }
+}
+
+@Composable
 private fun TypingPrompt(text: String, color: Color) {
     var visibleChars by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
@@ -681,6 +719,7 @@ private fun ChatInputBar(
     isProcessing: Boolean, onSend: (String) -> Unit, onCancel: () -> Unit,
     fileCount: Int = 0,
     onAttachFile: (() -> Unit)? = null,
+    placeholder: String = "输入指令…",
 ) {
     var text by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
@@ -714,7 +753,7 @@ private fun ChatInputBar(
             OutlinedTextField(
                 value = text, onValueChange = { text = it },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("输入指令…", style = MaterialTheme.typography.bodyMedium.copy(
+                placeholder = { Text(placeholder, style = MaterialTheme.typography.bodyMedium.copy(
                     fontFamily = FontFamily.Monospace, fontSize = 13.sp,
                     color = nc.material.onSurfaceVariant.copy(alpha = 0.4f))) },
                 textStyle = MaterialTheme.typography.bodyMedium.copy(

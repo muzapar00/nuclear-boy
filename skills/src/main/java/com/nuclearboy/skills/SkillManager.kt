@@ -33,7 +33,7 @@ import java.util.zip.ZipInputStream
  */
 class SkillManager(
     private val pythonSandbox: PythonSandbox,
-    private val skillsDir: File,
+    val skillsDir: File,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) {
     /** Callback invoked when a skill should be registered as an agent tool. */

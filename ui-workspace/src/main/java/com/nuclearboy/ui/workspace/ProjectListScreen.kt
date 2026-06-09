@@ -10,6 +10,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,12 +35,19 @@ fun ProjectListScreen(
     onDeleteProject: (String) -> Unit = {},
     onAutoCreateProject: (String) -> Unit = {},  // message -> creates project and navigates
     onSettingsClick: () -> Unit = {},
+    welcomeText: String? = null,
+    onClearWelcome: () -> Unit = {},
 ) {
     val nc = NuclearBoyTheme.colorScheme
     var showCreateDialog by remember { mutableStateOf(false) }
     var projectToDelete by remember { mutableStateOf<Pair<String, String>?>(null) }
     var quickInput by remember { mutableStateOf("") }
     val focusManager = LocalFocusManager.current
+    var showWelcomeDialog by remember { mutableStateOf(false) }
+    // 当 welcomeText 异步加载完毕后自动弹窗
+    LaunchedEffect(welcomeText) {
+        if (welcomeText != null) showWelcomeDialog = true
+    }
 
     Scaffold(
         containerColor = nc.material.background,
@@ -222,6 +230,36 @@ fun ProjectListScreen(
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false }) {
                     Text("取消", color = nc.material.onSurfaceVariant)
+                }
+            },
+        )
+    }
+
+    // Welcome dialog
+    if (showWelcomeDialog && welcomeText != null) {
+        AlertDialog(
+            onDismissRequest = { showWelcomeDialog = false; onClearWelcome() },
+            containerColor = nc.material.surface,
+            shape = RoundedCornerShape(16.dp),
+            title = {
+                Text("☢️ 欢迎回来！", color = nc.material.primary, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text(
+                    welcomeText,
+                    color = nc.material.onSurface,
+                    lineHeight = 22.sp,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWelcomeDialog = false
+                    onClearWelcome()
+                }) { Text("开始干活 💪", color = nc.material.primary) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showWelcomeDialog = false; onClearWelcome() }) {
+                    Text("关闭", color = nc.material.onSurfaceVariant)
                 }
             },
         )

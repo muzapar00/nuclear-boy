@@ -73,7 +73,7 @@ private fun NuclearBoyMainScreen() {
         scope.launch { drawerState.close() }
         projectViewModel.selectProject(projectId)
         navController.navigate(NavRoutes.chatRoute(projectId)) {
-            popUpTo(NavRoutes.PROJECT_LIST) { inclusive = false }
+            popUpTo(NavRoutes.chatRoute("__general__")) { inclusive = false }
             launchSingleTop = true
         }
     }
@@ -81,8 +81,9 @@ private fun NuclearBoyMainScreen() {
     fun createAndNavigate(name: String) {
         scope.launch { drawerState.close() }
         projectViewModel.createProject(name)
+        projectViewModel.selectProject(name) // 设置 currentProjectDir
         navController.navigate(NavRoutes.chatRoute(name)) {
-            popUpTo(NavRoutes.PROJECT_LIST) { inclusive = false }
+            popUpTo(NavRoutes.chatRoute("__general__")) { inclusive = false }
             launchSingleTop = true
         }
     }
@@ -96,8 +97,25 @@ private fun NuclearBoyMainScreen() {
                 projects = projects,
                 currentProjectId = currentProjectId,
                 activeSkills = activeSkills,
+                onGeneralAgentSelected = {
+                    projectViewModel.selectProject("__general__")
+                    scope.launch { drawerState.close() }
+                    navController.navigate(NavRoutes.chatRoute("__general__")) {
+                        popUpTo(NavRoutes.chatRoute("__general__")) { inclusive = true }
+                        launchSingleTop = true
+                    }
+                },
                 onProjectSelected = { navigateToProject(it) },
                 onCreateProject = { createAndNavigate(it) },
+                onDeleteProject = { projectViewModel.deleteProject(it) },
+                onSettingsClick = {
+                    scope.launch { drawerState.close() }
+                    navController.navigate(NavRoutes.SETTINGS)
+                },
+                onSkillManagerClick = {
+                    scope.launch { drawerState.close() }
+                    navController.navigate(NavRoutes.SKILL_MANAGER)
+                },
                 onClose = { scope.launch { drawerState.close() } },
             )
         },
@@ -106,7 +124,10 @@ private fun NuclearBoyMainScreen() {
             NuclearBoyNavHost(
                 navController = navController,
                 projectViewModel = projectViewModel,
-                onMenuClick = { scope.launch { drawerState.open() } },
+                onMenuClick = {
+                    projectViewModel.refreshProjects()
+                    scope.launch { drawerState.open() }
+                },
             )
         }
     }

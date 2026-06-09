@@ -97,18 +97,6 @@ data class SemanticMemoryEntity(
     val recallCount: Int = 0,
 )
 
-// ── Type Converters ─────────────────────────────────────
-
-/**
- * Room type converters for the memory database.
- * Currently handles basic types; embedding JSON is stored as a String.
- */
-class MemoryTypeConverters {
-    // Placeholder for future custom type conversions.
-    // Embedding arrays are stored as JSON strings.
-    // Additional converters can be added here for complex types.
-}
-
 // ── Database ────────────────────────────────────────────
 
 /**
@@ -132,7 +120,6 @@ class MemoryTypeConverters {
     version = 1,
     exportSchema = false,
 )
-@TypeConverters(MemoryTypeConverters::class)
 abstract class MemoryDatabase : RoomDatabase() {
 
     abstract fun memoryDao(): MemoryDao

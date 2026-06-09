@@ -71,6 +71,7 @@ data class ProjectContext(
     val currentFiles: List<FileInfo>,
     val userProfile: UserProfile,
     val activeSkills: List<SkillInfo>,
+    val memoryContext: String = "",
 )
 
 // ── Tool Call Accumulator ───────────────────────────────
@@ -151,6 +152,7 @@ class AgentEngine(
     private val contextManager: ContextWindowManager,
     private val tokenTracker: TokenTracker,
     private val modelRouter: ModelRouter = ModelRouter(),
+    var memoryStore: com.nuclearboy.memory.MemoryStore? = null,
 ) {
 
     private val json = Json {
@@ -190,12 +192,17 @@ class AgentEngine(
         // Reset tool call accumulator for this run
         val accumulator = ToolCallAccumulator()
 
+        // 记忆上下文由 ChatViewModel 在调用前注入到 projectContext.memoryContext
+        val memoryContext = projectContext.memoryContext
+        android.util.Log.e("NuclearBoy", "[AgentEngine] run() memoryContext length=${memoryContext.length}")
+
         // Build system prompt
         val systemPrompt = SystemPromptBuilder.build(
             userProfile = projectContext.userProfile,
             project = projectContext.project,
             currentFiles = projectContext.currentFiles,
             activeSkills = projectContext.activeSkills,
+            memoryContext = memoryContext,
         )
         android.util.Log.e("NuclearBoy", "[AgentEngine] run() systemPrompt built, length=${systemPrompt.length} tokens~=${systemPrompt.length / 3}")
 

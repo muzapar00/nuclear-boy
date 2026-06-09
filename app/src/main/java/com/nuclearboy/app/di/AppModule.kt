@@ -148,6 +148,12 @@ object AppModule {
         android.util.Log.e("NuclearBoy", "[DI] provideFileOperations")
         // Use app-specific external storage for full read/write/delete permissions
         val root = File(context.getExternalFilesDir(null), AppConstants.APP_DOCUMENTS_DIR).also { it.mkdirs() }
+        // 自动创建全局 General Agent 文件夹
+        val generalDir = File(root, "__general__")
+        generalDir.mkdirs()
+        val generalAgentDir = File(generalDir, ".agent")
+        generalAgentDir.mkdirs()
+        android.util.Log.e("NuclearBoy", "[DI] __general__ folder created at ${generalDir.absolutePath}")
         return FileOperations(root)
     }
 
@@ -159,6 +165,7 @@ object AppModule {
         pythonSandbox: PythonSandbox,
         fileOperations: FileOperations,
         skillManager: SkillManager,
+        memoryStore: MemoryStore,
     ): ToolRegistry {
         android.util.Log.e("NuclearBoy", "[DI] provideToolRegistry — entry")
         val registry = ToolRegistry()
@@ -174,6 +181,10 @@ object AppModule {
             val webTools = buildWebTools(pythonSandbox)
             android.util.Log.e("NuclearBoy", "[DI] buildWebTools — ${webTools.size} tools: ${webTools.joinToString { it.name }}")
             registry.registerAll(webTools)
+
+            val memTools = buildMemoryTools(fileOperations)
+            android.util.Log.e("NuclearBoy", "[DI] buildMemoryTools — ${memTools.size} tools: ${memTools.joinToString { it.name }}")
+            registry.registerAll(memTools)
 
         }
 
@@ -231,6 +242,7 @@ object AppModule {
         contextManager: ContextWindowManager,
         tokenTracker: TokenTracker,
         modelRouter: ModelRouter,
+        memoryStore: MemoryStore,
     ): AgentEngine {
         android.util.Log.e("NuclearBoy", "[DI] provideAgentEngine")
         val engine = AgentEngine(
@@ -239,6 +251,7 @@ object AppModule {
             contextManager = contextManager,
             tokenTracker = tokenTracker,
             modelRouter = modelRouter,
+            memoryStore = memoryStore,
         )
         // 用户取消对话时的清理回调
         engine.onCancel = {
@@ -526,6 +539,31 @@ else:
                     android.util.Log.e("NuclearBoy", "[DI] web_fetch FAILED — url=$url, error=${e.message}")
                     ToolResult(false, error = "抓取失败: " + e.message)
                 }
+            }),
+    )
+
+    private fun buildMemoryTools(fileOps: FileOperations) = listOf(
+        ToolDefinition("remember", "记住重要信息。AI主动调用此工具将用户偏好、重要事实、经验教训写入长期记忆。记忆会立即出现在下一轮对话的系统提示词中。参数 path=要记住的内容, content=类别。示例：remember(path=\"用户喜欢简短回答\", content=\"偏好\")",
+            listOf(
+                ToolParameter("path", "string", "要记住的内容。示例：用户偏好Kotlin、项目用Compose", true),
+                ToolParameter("content", "string", "类别标签。示例：偏好、事实、经验、提醒", required = false, default = "偏好"),
+            ),
+            executor = { p ->
+                val value = p["path"] ?: return@ToolDefinition ToolResult(false, error = "缺少 path 参数")
+                val category = p["content"] ?: "偏好"
+                val memFile = java.io.File(fileOps.getWorkspaceRoot(), "__general__/.agent/memory.json")
+                memFile.parentFile?.mkdirs()
+                val memories: MutableList<Map<String, String>> = try {
+                    val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true; isLenient = true }
+                    json.decodeFromString<List<Map<String, String>>>(memFile.readText()).toMutableList()
+                } catch (_: Exception) { mutableListOf() }
+                memories.add(mapOf("value" to value, "category" to category, "time" to java.time.Instant.now().toString()))
+                // 只保留最近 50 条
+                val trimmed = memories.takeLast(50)
+                val json = kotlinx.serialization.json.Json { encodeDefaults = true }
+                memFile.writeText(json.encodeToString(kotlinx.serialization.serializer(), trimmed))
+                android.util.Log.e("NuclearBoy", "[DI] remember saved to ${memFile.absolutePath} total=${trimmed.size}")
+                ToolResult(true, "已记住: $value")
             }),
     )
 }

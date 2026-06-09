@@ -2,9 +2,14 @@ package com.nuclearboy.app.navigation
 
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.*
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
@@ -15,7 +20,6 @@ import com.nuclearboy.app.ui.projects.ProjectViewModel
 import com.nuclearboy.app.ui.splash.SplashScreen
 import com.nuclearboy.app.ui.tutorial.TutorialScreen
 import com.nuclearboy.ui.chat.ChatScreen
-import com.nuclearboy.ui.workspace.ProjectListScreen
 
 object NavRoutes {
     const val SPLASH = "splash"
@@ -24,6 +28,7 @@ object NavRoutes {
     const val SETTINGS = "settings"
     const val ONBOARDING = "onboarding"
     const val TUTORIAL = "tutorial"
+    const val SKILL_MANAGER = "skill_manager"
 
     fun chatRoute(projectId: String, initialMessage: String = "") =
         "chat/$projectId" + if (initialMessage.isNotEmpty()) "?initialMessage=$initialMessage" else ""
@@ -48,44 +53,14 @@ fun NuclearBoyNavHost(
             android.util.Log.e("NuclearBoy", "[NavHost] route=SPLASH")
             SplashScreen(
                 onComplete = {
-                    navController.navigate(NavRoutes.PROJECT_LIST) {
+                    navController.navigate(NavRoutes.chatRoute("__general__")) {
                         popUpTo(NavRoutes.SPLASH) { inclusive = true }
                     }
                 },
             )
         }
 
-        // ── Project List ──────────────────────────────────
-        composable(NavRoutes.PROJECT_LIST) {
-            android.util.Log.e("NuclearBoy", "[NavHost] route=PROJECT_LIST")
-            val projects by projectViewModel.projects.collectAsState()
-
-            ProjectListScreen(
-                projects = projects,
-                onMenuClick = onMenuClick,
-                onSettingsClick = { navController.navigate(NavRoutes.SETTINGS) },
-                onProjectSelected = { projectId ->
-                    projectViewModel.selectProject(projectId)
-                    navController.navigate(NavRoutes.chatRoute(projectId)) {
-                        popUpTo(NavRoutes.PROJECT_LIST)
-                    }
-                },
-                onCreateProject = { name -> projectViewModel.createProject(name) },
-                onDeleteProject = { id -> projectViewModel.deleteProject(id) },
-                onAutoCreateProject = { message ->
-                    val name = message.trim().take(30)
-                        .replace(Regex("""[<>:"/\\|?*\x00-\x1f]"""), "")
-                        .replace(Regex("""\s+"""), "-")
-                        .ifEmpty { "untitled" }
-                    projectViewModel.createProject(name)
-                    projectViewModel.selectProject(name)
-                    navController.navigate(NavRoutes.chatRoute(name, message)) {
-                        popUpTo(NavRoutes.PROJECT_LIST)
-                    }
-                },
-            )
-        }
-
+        // ── Chat (General Agent + 项目对话) ──────────────
         composable(
             route = NavRoutes.CHAT,
             arguments = listOf(
@@ -95,8 +70,9 @@ fun NuclearBoyNavHost(
         ) { backStackEntry ->
             val projectId = backStackEntry.arguments?.getString("projectId") ?: return@composable
             val initialMessage = backStackEntry.arguments?.getString("initialMessage") ?: ""
-            android.util.Log.e("NuclearBoy", "[NavHost] route=CHAT projectId=$projectId initialMessage='${initialMessage.take(50)}'")
+            android.util.Log.e("NuclearBoy", "[NavHost] route=CHAT projectId=$projectId")
             val ctx = androidx.compose.ui.platform.LocalContext.current
+
             ChatScreen(
                 projectId = projectId,
                 initialMessage = initialMessage,
@@ -130,13 +106,21 @@ fun NuclearBoyNavHost(
             )
         }
 
+        composable(NavRoutes.SKILL_MANAGER) {
+            android.util.Log.e("NuclearBoy", "[NavHost] route=SKILL_MANAGER")
+            com.nuclearboy.app.ui.skills.SkillManagerPanel(
+                skillManager = projectViewModel.skillManager,
+                onNavigateBack = { navController.popBackStack() },
+            )
+        }
+
         composable(NavRoutes.ONBOARDING) {
             android.util.Log.e("NuclearBoy", "[NavHost] route=ONBOARDING")
             val settingsViewModel: com.nuclearboy.app.ui.settings.SettingsViewModel = hiltViewModel()
             com.nuclearboy.app.ui.onboarding.OnboardingScreen(
                 apiKeyManager = settingsViewModel.apiKeyManager,
                 onComplete = {
-                    navController.navigate(NavRoutes.PROJECT_LIST) {
+                    navController.navigate(NavRoutes.chatRoute("__general__")) {
                         popUpTo(NavRoutes.ONBOARDING) { inclusive = true }
                     }
                 },

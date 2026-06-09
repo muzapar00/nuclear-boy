@@ -11,6 +11,7 @@ import com.nuclearboy.api.deepseek.TokenSnapshot
 import com.nuclearboy.api.deepseek.TokenTracker
 import com.nuclearboy.common.*
 import com.nuclearboy.common.AppConstants
+import com.nuclearboy.common.AppResult
 import com.nuclearboy.memory.MemoryStore
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -86,24 +87,25 @@ class ChatViewModel @Inject constructor(
     val projectFiles: StateFlow<List<FileInfo>> = _projectFiles.asStateFlow()
 
     fun setProject(projectId: String) {
-        android.util.Log.e("NuclearBoy", "[ChatVM] setProject() projectId=$projectId currentProjectId=$currentProjectId isAlreadyCurrent=${currentProjectId == projectId}")
-        if (currentProjectId == projectId) return
+        android.util.Log.e("NuclearBoy", "[ChatVM] setProject() projectId=$projectId previousId=$currentProjectId currentDir=${fileOperations.currentProjectDir}")
+        // currentProjectDir 由外部 selectProject() 设置（UUID → 目录名的转换）
+        // 此处不覆盖，信任外部已设置正确
         currentProjectId = projectId
         val root = fileOperations.projectRoot()
-        _projectName.value = root.name
+        _projectName.value = if (projectId == "__general__") "核弹男孩" else root.name
+        // 每次切换都重新加载消息
         val loaded = try { loadPersistedMessages(projectId) }
             catch (e: Exception) { android.util.Log.e("NuclearBoy", "加载历史失败: ${e.message}"); emptyList() }
-        android.util.Log.e("NuclearBoy", "[ChatVM] setProject() messagesLoaded=${loaded.size}")
+        android.util.Log.e("NuclearBoy", "[ChatVM] setProject() messagesLoaded=${loaded.size} root=${root.absolutePath}")
         _messages.value = loaded
         refreshProjectFiles()
-        // Load per-project skills
-        try {
-            val skillsDir = java.io.File(fileOperations.projectRoot(), AppConstants.PROJECT_SKILLS_DIR)
-            android.util.Log.e("NuclearBoy", "[ChatVM] setProject() skillsDir=${skillsDir.absolutePath} exists=${skillsDir.exists()}")
-            skillManager.loadProjectSkills(skillsDir)
-            android.util.Log.e("NuclearBoy", "[ChatVM] setProject() skillsLoaded activeCount=${skillManager.activeSkills.value.size}")
-        } catch (e: Exception) { android.util.Log.e("NuclearBoy", "[ChatVM] setProject() skills load failed: ${e.message}") }
         if (loaded.isNotEmpty()) _scrollToBottom.value++
+        if (projectId != "__general__") {
+            try {
+                val skillsDir = java.io.File(fileOperations.projectRoot(), AppConstants.PROJECT_SKILLS_DIR)
+                skillManager.loadProjectSkills(skillsDir)
+            } catch (e: Exception) { android.util.Log.e("NuclearBoy", "[ChatVM] setProject() skills load failed: ${e.message}") }
+        }
     }
 
     override fun onCleared() {
@@ -144,37 +146,31 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun saveMessages() {
-        android.util.Log.e("NuclearBoy", "[ChatVM] saveMessages() entry messagesCount=${_messages.value.size}")
-        currentProjectId?.let {
-            try {
-                val dir = java.io.File(fileOperations.projectRoot(), ".agent")
-                dir.mkdirs()
-                val data = Json.encodeToString(serializer(), _messages.value.takeLast(50))
-                val file = java.io.File(dir, "conversation.json")
-                file.writeText(data)
-                android.util.Log.e("NuclearBoy", "[ChatVM] saveMessages() success filePath=${file.absolutePath} savedCount=${_messages.value.takeLast(50).size} size=${data.length}")
-            } catch (e: Exception) {
-                android.util.Log.e("NuclearBoy", "[ChatVM] saveMessages() error: ${e.message}", e)
-                android.util.Log.e("NuclearBoy", "保存消息失败: ${e.message}")
-            }
+        val pid = currentProjectId ?: return
+        android.util.Log.e("NuclearBoy", "[ChatVM] saveMessages() pid=$pid messagesCount=${_messages.value.size}")
+        try {
+            // 直接用 workspaceRoot + projectId 构建路径，不依赖 currentProjectDir
+            val dir = java.io.File(fileOperations.getWorkspaceRoot(), "$pid/.agent")
+            dir.mkdirs()
+            val data = Json.encodeToString(serializer(), _messages.value.takeLast(50))
+            val file = java.io.File(dir, "conversation.json")
+            file.writeText(data)
+            android.util.Log.e("NuclearBoy", "[ChatVM] saveMessages() saved to ${file.absolutePath}")
+        } catch (e: Exception) {
+            android.util.Log.e("NuclearBoy", "[ChatVM] saveMessages() error: ${e.message}", e)
         }
     }
 
     private fun loadPersistedMessages(projectId: String): List<ChatMessage> {
-        android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() entry projectId=$projectId currentProjectDir=${fileOperations.currentProjectDir}")
+        android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() projectId=$projectId")
         return try {
-            // currentProjectDir is already set by ProjectViewModel.selectProject() — do NOT overwrite
-            val file = java.io.File(fileOperations.projectRoot(), ".agent/conversation.json")
-            val filePath = file.absolutePath
-            android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() filePath=$filePath exists=${file.exists()}")
+            val file = java.io.File(fileOperations.getWorkspaceRoot(), "$projectId/.agent/conversation.json")
+            android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() path=${file.absolutePath} exists=${file.exists()}")
             if (file.exists()) {
                 val loaded = Json.decodeFromString(serializer<List<ChatMessage>>(), file.readText())
-                android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() loadedCount=${loaded.size}")
+                android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() loaded=${loaded.size}")
                 loaded
-            } else {
-                android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() file does not exist, returning empty")
-                emptyList()
-            }
+            } else emptyList()
         } catch (e: Exception) {
             android.util.Log.e("NuclearBoy", "[ChatVM] loadPersistedMessages() error: ${e.message}", e)
             android.util.Log.e("NuclearBoy", "加载消息失败: ${e.message}", e)
@@ -262,7 +258,17 @@ class ChatViewModel @Inject constructor(
         _streamingState.value = StreamingState(messageId = assistantId, isThinking = true)
         _scrollToBottom.value++
 
-        // Build real project context with skills
+        // 读记忆文件
+        val memFile = java.io.File(fileOperations.getWorkspaceRoot(), "__general__/.agent/memory.json")
+        val memoryCtx = if (memFile.exists()) {
+            try {
+                val json = Json { ignoreUnknownKeys = true; isLenient = true }
+                val memories = json.decodeFromString<List<Map<String, String>>>(memFile.readText())
+                memories.takeLast(10).joinToString("\n") { "- ${it["value"]} [${it["category"]}]" }
+            } catch (_: Exception) { "" }
+        } else ""
+
+        // Build project context with memory
         val projectContext = ProjectContext(
             project = currentProjectId?.let { id ->
                 Project(id = id, name = id, rootPath = fileOperations.projectRoot().absolutePath)
@@ -270,6 +276,7 @@ class ChatViewModel @Inject constructor(
             currentFiles = _projectFiles.value,
             userProfile = UserProfile(),
             activeSkills = skillManager.activeSkills.value,
+            memoryContext = memoryCtx,
         )
         android.util.Log.e("NuclearBoy", "[ChatVM] sendMessage() projectContext built: project=${projectContext.project?.name} files=${projectContext.currentFiles.size} skills=${projectContext.activeSkills.size}")
 
@@ -577,14 +584,18 @@ class ChatViewModel @Inject constructor(
         val lastAi = lastAssistant?.content ?: ""
         if (lastAi.isNotBlank()) {
             viewModelScope.launch(Dispatchers.IO) {
-                memoryStore.autoExtractMemories(projectId, lastUser, lastAi)
-                // 更新用户画像：记录本次对话
-                memoryStore.updateUserProfile("last_project", projectId, "interaction", 0.9f)
-                memoryStore.updateUserProfile("last_active_at", System.currentTimeMillis().toString(), "schedule", 0.9f)
-                memoryStore.updateUserProfile("total_conversations",
-                    ((memoryStore.getProfileValue("total_conversations").let {
-                        (it as? AppResult.Success)?.data?.toIntOrNull() ?: 0
-                    } + 1).toString()), "interaction", 0.9f)
+                try {
+                    val r1 = memoryStore.updateUserProfile("last_project", projectId, "interaction", 0.9f)
+                    android.util.Log.e("NuclearBoy", "[ChatVM] memoryWrite last_project=$projectId result=$r1")
+                    val convResult = memoryStore.getProfileValue("total_conversations")
+                    val convCount = if (convResult is AppResult.Success) (convResult.data?.toIntOrNull() ?: 0) + 1 else 1
+                    val r2 = memoryStore.updateUserProfile("total_conversations", convCount.toString(), "interaction", 0.9f)
+                    android.util.Log.e("NuclearBoy", "[ChatVM] memoryWrite total_conversations=$convCount result=$r2")
+                    val r3 = memoryStore.autoExtractMemories(projectId, lastUser, lastAi)
+                    android.util.Log.e("NuclearBoy", "[ChatVM] memoryWrite autoExtractMemories result=$r3")
+                } catch (e: Exception) {
+                    android.util.Log.e("NuclearBoy", "[ChatVM] memoryWrite FAILED: ${e.message}", e)
+                }
             }
         }
     }

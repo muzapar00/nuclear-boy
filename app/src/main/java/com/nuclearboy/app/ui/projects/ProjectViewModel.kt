@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.nuclearboy.common.Project
 import com.nuclearboy.common.SkillInfo
+import com.nuclearboy.memory.MemoryStore
 import com.nuclearboy.skills.SkillManager
 import com.nuclearboy.tools.docgen.FileOperations
 import kotlinx.serialization.serializer
@@ -16,19 +17,33 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
+data class WelcomeData(
+    val lastProject: String,
+    val conversationCount: Int,
+)
+
 @HiltViewModel
 class ProjectViewModel @Inject constructor(
     private val fileOperations: FileOperations,
-    private val skillManager: SkillManager,
+    val skillManager: SkillManager,
+    private val memoryStore: MemoryStore,
 ) : ViewModel() {
     val activeSkills: StateFlow<List<SkillInfo>> = skillManager.activeSkills
 
     private val _projects = MutableStateFlow<List<Project>>(emptyList())
     val projects: StateFlow<List<Project>> = _projects.asStateFlow()
 
+    private val _welcomeData = MutableStateFlow<WelcomeData?>(null)
+    val welcomeData: StateFlow<WelcomeData?> = _welcomeData.asStateFlow()
+    fun clearWelcome() { _welcomeData.value = null }
+
+    /** 外部触发刷新项目列表 */
+    fun refreshProjects() { loadProjects() }
+
     init {
         android.util.Log.e("NuclearBoy", "[ProjectVM] ProjectViewModel created")
         loadProjects()
+        loadWelcomeMemory()
     }
 
     fun createProject(name: String) {
@@ -38,15 +53,12 @@ class ProjectViewModel @Inject constructor(
                 fileOperations.createProject(name)
             }) {
                 is com.nuclearboy.common.AppResult.Success -> {
-                    val project = result.data // Keep UUID from FileOperations
+                    val project = result.data
                     android.util.Log.e("NuclearBoy", "[ProjectVM] createProject SUCCESS — id=${project.id}, name=${project.name}")
-                    _projects.value = _projects.value + project
-                    // Persist project metadata for future loading
-                    persistProjectMeta(project)
+                    loadProjects() // 实时刷新
                 }
                 is com.nuclearboy.common.AppResult.Failure -> {
                     android.util.Log.e("NuclearBoy", "[ProjectVM] createProject FAILED — ${result.error.humanMessage}")
-                    // TODO: show error
                 }
             }
         }
@@ -73,11 +85,31 @@ class ProjectViewModel @Inject constructor(
             val result = withContext(Dispatchers.IO) { fileOperations.deleteFile(project.name) }
             fileOperations.currentProjectDir = saved
             if (result is com.nuclearboy.common.AppResult.Success) {
-                _projects.value = _projects.value.filter { it.id != projectId }
                 android.util.Log.e("NuclearBoy", "[ProjectVM] deleteProject SUCCESS: ${project.name}")
+                loadProjects() // 实时刷新
             } else {
                 val err = (result as com.nuclearboy.common.AppResult.Failure).error.humanMessage
                 android.util.Log.e("NuclearBoy", "[ProjectVM] deleteProject FAILED: ${project.name} — $err")
+            }
+        }
+    }
+
+    private fun loadWelcomeMemory() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val lastProject = memoryStore.getProfileValue("last_project")
+                val totalConv = memoryStore.getProfileValue("total_conversations")
+                @Suppress("UNCHECKED_CAST")
+                val projectName = (lastProject as? com.nuclearboy.common.AppResult.Success<*>)?.data as? String
+                @Suppress("UNCHECKED_CAST")
+                val convCount = ((totalConv as? com.nuclearboy.common.AppResult.Success<*>)?.data as? String)?.toIntOrNull() ?: 0
+                android.util.Log.e("NuclearBoy", "[ProjectVM] welcomeMemory rawLastProject=$lastProject rawConv=$totalConv")
+                android.util.Log.e("NuclearBoy", "[ProjectVM] welcomeMemory project=$projectName convCount=$convCount")
+                if (!projectName.isNullOrBlank() && projectName != "default" && convCount > 0) {
+                    _welcomeData.value = WelcomeData(projectName, convCount)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("NuclearBoy", "[ProjectVM] welcomeMemory FAILED: ${e.message}")
             }
         }
     }
@@ -98,7 +130,7 @@ class ProjectViewModel @Inject constructor(
             }
             when (result) {
                 is com.nuclearboy.common.AppResult.Success -> {
-                    val projectDirs = result.data.filter { it.isDirectory }
+                    val projectDirs = result.data.filter { it.isDirectory && it.name != "__general__" && !it.name.startsWith(".") }
                     android.util.Log.e("NuclearBoy", "[ProjectVM] loadProjects — found ${projectDirs.size} directories")
                     _projects.value = projectDirs.mapNotNull { dir ->
                         // Try to load persisted project metadata
