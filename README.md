@@ -151,3 +151,8 @@ NuclearBoy/
 ### 许可证
 
 MIT License — 详见 [LICENSE](LICENSE)
+
+## 贡献者 Contributors
+感谢以下伙伴对项目的贡献：
+- [穆再排尔·穆合塔尔](https://github.com/muzapar00) - 项目创始人 & 仓库所有者
+- [jjjjqx960-wq](https://github.com/jjjjqx960-wq) - 项目镜像维护者 & 核心协作者
